@@ -20,6 +20,7 @@ sys.path.append(BASE_DIR)
 from src.cost_engine.financial_matrix import evaluate_cost_matrix, BASELINE_RETURN_COST_INR
 from src.ml.shap_explainer import ReturnExplainer
 from src.api.schemas import CheckoutPayload, WarehouseActionRequest, CopilotQuery
+from src.agent.operations_agent import warehouse_agent
 
 app = FastAPI(
     title="Explainable AI Reverse Logistics DSS API",
@@ -272,59 +273,19 @@ def get_warehouse_metrics():
 @app.post("/api/v1/copilot/chat")
 def copilot_chat(query: CopilotQuery):
     """
-    Intelligent Conversational Copilot for the warehouse floor.
-    Answers natural language queries about orders, SHAP drivers, and savings.
+    Autonomous Forward Deployed AI Agent endpoint for warehouse operations.
+    Executes ReAct reasoning loop with Tool Calling and Domain RAG over SOPs.
     """
-    q = query.question.lower()
+    agent_output = warehouse_agent.run(
+        user_query=query.question,
+        context_order_id=query.context_order_id
+    )
     
-    # 1. Order-specific lookup
-    if query.context_order_id or "ord_" in q:
-        target_id = query.context_order_id
-        if not target_id:
-            for word in q.split():
-                if "ord_" in word:
-                    target_id = word.upper().strip("?.,")
-                    break
-                    
-        match = next((o for o in ACTIVE_QUEUE if o["order_id"] == target_id), None)
-        if match:
-            risk = match["risk_analysis"]
-            fin = match["financial_decision"]
-            drivers_str = "; ".join([f"{d['label']} (+{int(abs(d['shap_impact'])*100)}%)" for d in risk["risk_drivers"]])
-            
-            reply = (
-                f"**Order {match['order_id']} Analysis:**\n"
-                f"- **Return Probability:** {int(risk['p_return'] * 100)}% ({risk['risk_level']} RISK)\n"
-                f"- **SHAP Root Causes:** {drivers_str}\n"
-                f"- **Baseline Risk Loss:** ₹{fin['baseline_expected_loss_inr']}\n"
-                f"- **Prescribed Action:** {fin['recommended_action']} (Cost: ₹{fin['intervention_cost_inr']})\n"
-                f"- **Projected Net Savings:** **₹{fin['projected_net_savings_inr']}** (ROI: {fin['roi_ratio']}x)"
-            )
-            return {"reply": reply, "referenced_order": match["order_id"]}
-
-    # 2. General operational and savings queries
-    if "saving" in q or "saved" in q or "money" in q:
-        reply = (
-            f"As of this shift, the system has intercepted **{CUMULATIVE_METRICS['high_risk_intercepted']} high-risk parcels**, "
-            f"yielding a cumulative net operational savings of **₹{CUMULATIVE_METRICS['total_net_savings_inr']:,.2f}** "
-            f"across {CUMULATIVE_METRICS['actions_executed']} executed warehouse interventions."
-        )
-        return {"reply": reply}
-
-    if "bracket" in q or "size" in q:
-        bracket_count = sum(1 for o in ACTIVE_QUEUE if o["is_bracket_order"])
-        reply = (
-            f"Currently, there are **{bracket_count} orders** flagged with **Bracket Size Shopping** in the active queue. "
-            f"Recommended operational action: Automated WhatsApp Size Confirmation prompt to eliminate the secondary redundant size prior to packing."
-        )
-        return {"reply": reply}
-
-    # Default fallback answer
     return {
-        "reply": (
-            "I am your Reverse Logistics Operations Copilot. You can ask me:\n"
-            "- *'Why is Order ORD_10001 high risk?'*\n"
-            "- *'How much total money have we saved today?'*\n"
-            "- *'How many bracket shopping orders are pending at Station 4?'*"
-        )
+        "reply": agent_output["final_answer"],
+        "referenced_order": agent_output["target_order_id"],
+        "reasoning_trace": agent_output["reasoning_trace"],
+        "citations": agent_output["citations"],
+        "optimal_action": agent_output["optimal_action"],
+        "risk_level": agent_output["risk_level"]
     }

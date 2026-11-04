@@ -3,6 +3,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-009688?style=flat&logo=fastapi)](https://fastapi.tiangolo.com)
 [![XGBoost](https://img.shields.io/badge/XGBoost-Classifier-1182C5?style=flat)](https://xgboost.readthedocs.io/)
 [![TreeSHAP](https://img.shields.io/badge/XAI-TreeSHAP-ff69b4?style=flat)](https://shap.readthedocs.io/)
+[![AI Agent](https://img.shields.io/badge/AI_Agent-ReAct_Tool_Calling_%2B_RAG-orange?style=flat)](#-enterprise-forward-deployed-ai-agent--rag)
 [![Research Paper](https://img.shields.io/badge/Research_Paper-IEEE_Format-blueviolet?style=flat)](./docs/Conference_Research_Paper_Manuscript.md)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker)](https://www.docker.com/)
 
@@ -77,6 +78,34 @@ Where:
   * **Automated WhatsApp Size Verification:** $C = ₹5.00$
   * **Targeted Pre-Shipment QC Inspection:** $C = ₹35.00$
   * **Reusable Protective Sleeve Deployment:** $C = ₹20.00$
+
+---
+
+## 🤖 Enterprise Forward Deployed AI Agent & Domain RAG
+
+For enterprise fulfillment centers, the system embeds an **Autonomous Operations Agent** operating on a **ReAct (Reasoning + Acting) loop** with executable tool calling and Domain RAG:
+
+```
+[Supervisor Natural Language Query]
+                 │
+                 ▼
+[Autonomous Warehouse AI Agent (ReAct Loop)]
+   ├── Step 1: Thought ──► Tool Call: tool_get_order_xai_diagnostics (XGBoost + TreeSHAP)
+   ├── Step 2: Thought ──► Tool Call: tool_query_warehouse_sop (Domain Vector RAG)
+   ├── Step 3: Thought ──► Tool Call: tool_calculate_intervention_roi (Unit Economics)
+   └── Step 4: Final Grounded Recommendation with SOP Citations & 1-Click Action
+```
+
+### 1. Domain RAG Knowledge Base (`data/knowledge_base/`)
+* **`warehouse_qc_sop.md`**: Apparel defect tolerance checklists, 4-point physical QC protocols, and defect disposition codes (`BIN_VRB_04`).
+* **`bracket_shopping_sop.md`**: Real-time multi-size cart detection rules and automated WhatsApp size-verification outreach scripts.
+* **`carrier_logistics_sop.md`**: 3PL carrier (Blue Dart, Delhivery, Shadowfax) transit damage rules and ₹20 protective sleeve guidelines.
+
+### 2. Autonomous Executable Tools (`src/agent/`)
+* **`tool_get_order_xai_diagnostics`**: Retrieves live $P_{\text{return}}$ and local TreeSHAP root-cause feature attributions.
+* **`tool_query_warehouse_sop`**: Semantic vector search retrieving grounded clauses from warehouse operating manuals.
+* **`tool_calculate_intervention_roi`**: Computes baseline expected financial loss and net savings ROI across mitigation actions.
+* **`tool_execute_warehouse_action`**: Dispatches physical QC tickets or automated customer WhatsApp verification prompts.
 
 ---
 

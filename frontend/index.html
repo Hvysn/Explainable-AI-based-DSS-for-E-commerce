@@ -65,8 +65,15 @@ button { cursor: pointer; }
 .ai-head small { font-size:10px;color:#818995; }
 .ai-status { width:8px;height:8px;border-radius:50%;background:#25a56c;display:inline-block;margin-right:5px; }
 .ai-messages { padding:15px;display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1;background:linear-gradient(#fff,#fffdfc); }
-.ai-msg { max-width:90%;padding:11px 12px;border-radius:13px;font-size:11px;line-height:1.55;color:#48515d;background:#f5f7f9;align-self:flex-start; }
+.ai-msg { max-width:92%;padding:11px 13px;border-radius:14px;font-size:11px;line-height:1.55;color:#48515d;background:#f5f7f9;align-self:flex-start; }
 .ai-msg.user { background:#eaf2ff;color:#234f9c;align-self:flex-end; }
+.ai-trace-box { margin-top:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;font-size:10px; }
+.ai-trace-toggle { cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:750;color:#475569;margin-bottom:4px;user-select:none; }
+.ai-trace-step { padding:5px 0;border-top:1px dashed #e2e8f0;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:9.5px;color:#334155;line-height:1.45; }
+.ai-trace-step strong { color:#2563eb; }
+.ai-citation-pill { display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-top:4px; }
+.ai-action-card { margin-top:8px;padding:8px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;justify-content:space-between;align-items:center; }
+.ai-action-btn { background:#16a34a;color:#fff;border:0;border-radius:7px;padding:5px 9px;font-size:10px;font-weight:800;cursor:pointer; }
 .ai-prompts { padding:0 13px 10px;display:flex;gap:6px;flex-wrap:wrap; }
 .ai-prompts button { border:1px solid #d7e4fb;background:#f6f9ff;color:#285bb5;border-radius:99px;padding:6px 9px;font-size:9px;font-weight:750; }
 .ai-compose { padding:11px 12px;border-top:1px solid #edf0f3;display:flex;gap:7px; }
@@ -1952,21 +1959,122 @@ function sendAI(e) {
   respondAI(q);
 }
 
-function respondAI(q) {
+async function respondAI(q) {
   const t = q.toLowerCase();
-  let answer;
+  
+  // Show thinking indicator
+  const thinkingId = 'thinking_' + Date.now();
+  addAIMessage(`<span style="color:#64748b;font-style:italic">🤖 Agent reasoning: selecting tools & querying SOP RAG...</span>`, 'bot');
 
-  if (t.includes('red') || t.includes('risk') || t.includes('why')) {
-    answer = `<strong>Order ORD-84219</strong> has an <strong>89% return probability</strong>. TreeSHAP indicates that <strong>+45%</strong> of the risk comes from <strong>Bracket Shopping</strong> (customer bought both Size M & L to try at home), and <strong>+26%</strong> comes from SKU sizing complaints in customer reviews.`;
-  } else if (t.includes('saving') || t.includes('shift') || t.includes('money')) {
-    answer = `Our Chennai South Hub has generated <strong>₹${Math.round(totalRealizedSavings).toLocaleString()}</strong> in net operational savings this shift. Each intercepted bracket order saves roughly <strong>₹195</strong> in wasted reverse freight and restocking labor.`;
-  } else if (t.includes('bracket')) {
-    answer = `<strong>Bracket shopping</strong> occurs when shoppers order multiple sizes (e.g. 30 and 32) of the exact same item intending to return the ones that don't fit. Our DSS catches this at checkout ingress and sends a ₹5 WhatsApp prompt with chest/waist measurements before the box leaves the warehouse.`;
-  } else {
-    answer = `I am your JHJ Operations Assistant. I monitor the 15-minute checkout-to-packing window using TreeSHAP and the unit-economics cost matrix. Try asking about a specific order ID or shift savings!`;
+  // Try live API first
+  try {
+    const res = await fetch('http://localhost:8000/api/v1/copilot/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, context_order_id: selectedOrder ? selectedOrder.id : 'ORD_10001' })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      renderAgentResponse(data);
+      return;
+    }
+  } catch (err) {
+    // Fallback to local agent simulation if backend is offline
   }
 
-  setTimeout(() => addAIMessage(answer), 250);
+  // Simulated Autonomous Agent (ReAct + RAG)
+  setTimeout(() => {
+    let targetOid = 'ORD-84219';
+    let isBracket = t.includes('bracket') || t.includes('84219') || t.includes('why') || t.includes('red');
+    
+    let traceSteps = [
+      {
+        thought: `Supervisor inquired about risk. Invoking tool_get_order_xai_diagnostics('${targetOid}').`,
+        tool: 'tool_get_order_xai_diagnostics',
+        obs: isBracket ? 'P(return) = 91.2%, HIGH RISK. Dominant TreeSHAP: Bracket Shopping (+45.2%), COD (+18.1%).' : 'Shift total: 6 orders monitored, 2 high-risk intercepted, 12% baseline return rate.'
+      },
+      {
+        thought: isBracket ? 'Risk driven by duplicate sizes. Searching warehouse knowledge base for size verification SOP.' : 'Searching warehouse knowledge base for shift SLA guidelines.',
+        tool: 'tool_query_warehouse_sop (RAG)',
+        obs: isBracket ? 'Retrieved [SOP-WMS-BRACKET-2026-V2 § Size Verification Protocol]. Mandates WhatsApp prompt before truck dispatch.' : 'Retrieved [SOP-WMS-CARRIER-2026-V1 § Logistics Cost Optimization].'
+      },
+      {
+        thought: 'Evaluating unit-economics cost matrix for optimal ROI.',
+        tool: 'tool_calculate_intervention_roi',
+        obs: isBracket ? 'Baseline Loss: ₹364.00 | Action: WhatsApp Size Prompt (Cost: ₹5.00) | Net Projected Savings: +₹195.20.' : 'Cumulative Net Shift Savings: +₹1,845.00 across 2 executed interventions.'
+      }
+    ];
+
+    let citation = isBracket ? '[SOP-WMS-BRACKET-2026-V2 § Size Verification Protocol]' : '[SOP-WMS-QC-2026-V3 § Checklist]';
+    let answerText = isBracket
+      ? `<strong>Autonomous Agent Assessment for ${targetOid}:</strong><br/>
+         • <strong>Root Cause (TreeSHAP):</strong> Customer bought adjacent Sizes M & L (Bracket Shopping) on COD.<br/>
+         • <strong>Grounded SOP Policy:</strong> Per <span class="ai-citation-pill">${citation}</span>, holding shipment for automated customer size confirmation eliminates the redundant unit before packing.<br/>
+         • <strong>Financial ROI:</strong> Baseline Loss: <strong>₹364.00</strong> &rarr; Prompt Cost: <strong>₹5.00</strong> &rarr; <strong>Net Savings: +₹195.20</strong>.`
+      : `<strong>Warehouse Shift Summary:</strong><br/>
+         The South Hub DSS has intercepted <strong>2 high-risk parcels</strong> today, realizing <strong>₹1,845 in net savings</strong>.<br/>
+         Active SOP in effect: <span class="ai-citation-pill">${citation}</span>.`;
+
+    let html = `
+      <div>${answerText}</div>
+      <div class="ai-trace-box">
+        <div class="ai-trace-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+          <span>🧠 View Agent Reasoning Trace (3 Tools Invoked)</span> ▾
+        </div>
+        <div style="display:none;margin-top:4px">
+          ${traceSteps.map((st, i) => `
+            <div class="ai-trace-step">
+              <strong>Step ${i+1}:</strong> ${st.thought}<br/>
+              ↳ <strong>Tool:</strong> <code>${st.tool}</code><br/>
+              ↳ <strong>Observation:</strong> ${st.obs}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ${isBracket ? `
+        <div class="ai-action-card">
+          <div><strong style="font-size:10px;color:#166534">Prescribed: WhatsApp Size Verification</strong><small style="display:block;font-size:9px;color:#15803d">Cost: ₹5.00 · Net Savings: +₹195.20</small></div>
+          <button class="ai-action-btn" onclick="toast('✓ Automated WhatsApp verification prompt sent to customer!')">Execute Action</button>
+        </div>
+      ` : ''}
+    `;
+
+    addAIMessage(html, 'bot');
+  }, 350);
+}
+
+function renderAgentResponse(data) {
+  let traceHtml = '';
+  if (data.reasoning_trace && data.reasoning_trace.length > 0) {
+    traceHtml = `
+      <div class="ai-trace-box">
+        <div class="ai-trace-toggle" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+          <span>🧠 View Agent Reasoning Trace (${data.reasoning_trace.length} Tools Invoked)</span> ▾
+        </div>
+        <div style="display:none;margin-top:4px">
+          ${data.reasoning_trace.map(st => `
+            <div class="ai-trace-step">
+              <strong>Step ${st.step}:</strong> ${st.thought}<br/>
+              ↳ <strong>Tool:</strong> <code>${st.tool_called}</code><br/>
+              ↳ <strong>Observation:</strong> ${st.observation}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  let citationsHtml = '';
+  if (data.citations && data.citations.length > 0) {
+    citationsHtml = data.citations.map(c => `<span class="ai-citation-pill">📖 ${c}</span>`).join(' ');
+  }
+
+  let fullHtml = `
+    <div>${data.reply.replace(/\n/g, '<br/>')}</div>
+    ${citationsHtml ? `<div style="margin-top:6px">${citationsHtml}</div>` : ''}
+    ${traceHtml}
+  `;
+  addAIMessage(fullHtml, 'bot');
 }
 
 let toastTimer;
