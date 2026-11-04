@@ -1,0 +1,35 @@
+sku_id,style_parent_id,category,subcategory,size,size_type,mrp,inherent_fit_defect_prob,inherent_fabric_defect_prob,inherent_color_mismatch_prob
+SKU_1001,STY_WOM_KUR_01,Women Ethnic,Kurti,XS,Tops,1299,0.78,0.12,0.05
+SKU_1002,STY_WOM_KUR_01,Women Ethnic,Kurti,S,Tops,1299,0.78,0.12,0.05
+SKU_1003,STY_WOM_KUR_01,Women Ethnic,Kurti,M,Tops,1299,0.78,0.12,0.05
+SKU_1004,STY_WOM_KUR_01,Women Ethnic,Kurti,L,Tops,1299,0.78,0.12,0.05
+SKU_1005,STY_WOM_KUR_01,Women Ethnic,Kurti,XL,Tops,1299,0.78,0.12,0.05
+SKU_1006,STY_WOM_KUR_01,Women Ethnic,Kurti,XXL,Tops,1299,0.78,0.12,0.05
+SKU_1007,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,XS,Tops,2499,0.15,0.08,0.02
+SKU_1008,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,S,Tops,2499,0.15,0.08,0.02
+SKU_1009,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,M,Tops,2499,0.15,0.08,0.02
+SKU_1010,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,L,Tops,2499,0.15,0.08,0.02
+SKU_1011,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,XL,Tops,2499,0.15,0.08,0.02
+SKU_1012,STY_WOM_ANA_01,Women Ethnic,Anarkali Suit,XXL,Tops,2499,0.15,0.08,0.02
+SKU_1013,STY_WOM_MID_01,Women Western,Midi Dress,XS,Tops,1899,0.82,0.18,0.06
+SKU_1014,STY_WOM_MID_01,Women Western,Midi Dress,S,Tops,1899,0.82,0.18,0.06
+SKU_1015,STY_WOM_MID_01,Women Western,Midi Dress,M,Tops,1899,0.82,0.18,0.06
+SKU_1016,STY_WOM_MID_01,Women Western,Midi Dress,L,Tops,1899,0.82,0.18,0.06
+SKU_1017,STY_WOM_MID_01,Women Western,Midi Dress,XL,Tops,1899,0.82,0.18,0.06
+SKU_1018,STY_WOM_MID_01,Women Western,Midi Dress,XXL,Tops,1899,0.82,0.18,0.06
+SKU_1019,STY_WOM_JEA_01,Women Western,High-Rise Jeans,28,Bottoms,2199,0.65,0.05,0.04
+SKU_1020,STY_WOM_JEA_01,Women Western,High-Rise Jeans,30,Bottoms,2199,0.65,0.05,0.04
+SKU_1021,STY_WOM_JEA_01,Women Western,High-Rise Jeans,32,Bottoms,2199,0.65,0.05,0.04
+SKU_1022,STY_WOM_JEA_01,Women Western,High-Rise Jeans,34,Bottoms,2199,0.65,0.05,0.04
+SKU_1023,STY_MEN_SHI_01,Men Western,Slim Fit Cotton Shirt,S,Tops,1499,0.12,0.62,0.03
+SKU_1024,STY_MEN_SHI_01,Men Western,Slim Fit Cotton Shirt,M,Tops,1499,0.12,0.62,0.03
+SKU_1025,STY_MEN_SHI_01,Men Western,Slim Fit Cotton Shirt,L,Tops,1499,0.12,0.62,0.03
+SKU_1026,STY_MEN_SHI_01,Men Western,Slim Fit Cotton Shirt,XL,Tops,1499,0.12,0.62,0.03
+SKU_1027,STY_MEN_CHI_01,Men Western,Chinos,30,Bottoms,1799,0.10,0.05,0.02
+SKU_1028,STY_MEN_CHI_01,Men Western,Chinos,32,Bottoms,1799,0.10,0.05,0.02
+SKU_1029,STY_MEN_CHI_01,Men Western,Chinos,34,Bottoms,1799,0.10,0.05,0.02
+SKU_1030,STY_MEN_CHI_01,Men Western,Chinos,36,Bottoms,1799,0.10,0.05,0.02
+SKU_1031,STY_MEN_TEE_01,Men Western,Oversized Graphic Tee,S,Tops,799,0.08,0.10,0.01
+SKU_1032,STY_MEN_TEE_01,Men Western,Oversized Graphic Tee,M,Tops,799,0.08,0.10,0.01
+SKU_1033,STY_MEN_TEE_01,Men Western,Oversized Graphic Tee,L,Tops,799,0.08,0.10,0.01
+SKU_1034,STY_MEN_TEE_01,Men Western,Oversized Graphic Tee,XL,Tops,799,0.08,0.10,0.01

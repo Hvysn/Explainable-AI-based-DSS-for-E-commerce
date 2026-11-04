@@ -1,0 +1,16 @@
+review_id,style_parent_id,category,rating,review_text,ground_truth_aspect
+REV_50001,STY_WOM_KUR_01,Women Ethnic,2,"Runs way too small! Ordered M but feels like XS. Will have to return.",size_fit_mismatch
+REV_50002,STY_WOM_KUR_01,Women Ethnic,1,"The shoulder fit is extremely tight, arms are uncomfortably stitched.",size_fit_mismatch
+REV_50003,STY_WOM_KUR_01,Women Ethnic,2,"Ordered two sizes because sizing is so inconsistent. Keeping neither.",size_fit_mismatch
+REV_50004,STY_WOM_KUR_01,Women Ethnic,5,"Loved the color and cut, fits like a glove.",positive
+REV_50005,STY_WOM_MID_01,Women Western,1,"Waist measurement does not match the size chart at all. Returning it.",size_fit_mismatch
+REV_50006,STY_WOM_MID_01,Women Western,2,"Very tight across the chest, please order one size up if buying.",size_fit_mismatch
+REV_50007,STY_WOM_MID_01,Women Western,5,"Perfect fit and premium fabric! Looks even better in person.",positive
+REV_50008,STY_MEN_SHI_01,Men Western,1,"Stitching came loose after one wear. Cheap thread quality.",fabric_quality
+REV_50009,STY_MEN_SHI_01,Men Western,2,"Zipper got stuck on first zip. Defective piece received.",fabric_quality
+REV_50010,STY_MEN_SHI_01,Men Western,1,"Buttons fell off right out of the plastic package.",fabric_quality
+REV_50011,STY_MEN_CHI_01,Men Western,5,"True to size, comfortable cotton cloth and neat stitching.",positive
+REV_50012,STY_MEN_CHI_01,Men Western,4,"Value for money purchase, fast delivery and great packing.",positive
+REV_50013,STY_MEN_TEE_01,Men Western,5,"Excellent quality product, highly recommended!",positive
+REV_50014,STY_MEN_TEE_01,Men Western,5,"Comfortable cotton and vibrant print.",positive
+REV_50015,STY_WOM_ANA_01,Women Ethnic,4,"Good finish, embroidery is neat and fabric is soft.",positive

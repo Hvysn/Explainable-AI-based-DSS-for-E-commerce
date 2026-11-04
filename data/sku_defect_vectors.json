@@ -1,0 +1,65 @@
+{
+  "STY_WOM_KUR_01": {
+    "style_parent_id": "STY_WOM_KUR_01",
+    "total_reviews_analyzed": 18,
+    "negative_review_ratio": 0.722,
+    "size_fit_defect_score": 0.785,
+    "fabric_quality_defect_score": 0.125,
+    "color_mismatch_score": 0.045,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_WOM_ANA_01": {
+    "style_parent_id": "STY_WOM_ANA_01",
+    "total_reviews_analyzed": 14,
+    "negative_review_ratio": 0.143,
+    "size_fit_defect_score": 0.150,
+    "fabric_quality_defect_score": 0.080,
+    "color_mismatch_score": 0.020,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_WOM_MID_01": {
+    "style_parent_id": "STY_WOM_MID_01",
+    "total_reviews_analyzed": 20,
+    "negative_review_ratio": 0.800,
+    "size_fit_defect_score": 0.820,
+    "fabric_quality_defect_score": 0.180,
+    "color_mismatch_score": 0.060,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_WOM_JEA_01": {
+    "style_parent_id": "STY_WOM_JEA_01",
+    "total_reviews_analyzed": 15,
+    "negative_review_ratio": 0.600,
+    "size_fit_defect_score": 0.650,
+    "fabric_quality_defect_score": 0.050,
+    "color_mismatch_score": 0.040,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_MEN_SHI_01": {
+    "style_parent_id": "STY_MEN_SHI_01",
+    "total_reviews_analyzed": 16,
+    "negative_review_ratio": 0.625,
+    "size_fit_defect_score": 0.120,
+    "fabric_quality_defect_score": 0.620,
+    "color_mismatch_score": 0.030,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_MEN_CHI_01": {
+    "style_parent_id": "STY_MEN_CHI_01",
+    "total_reviews_analyzed": 12,
+    "negative_review_ratio": 0.083,
+    "size_fit_defect_score": 0.100,
+    "fabric_quality_defect_score": 0.050,
+    "color_mismatch_score": 0.020,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  },
+  "STY_MEN_TEE_01": {
+    "style_parent_id": "STY_MEN_TEE_01",
+    "total_reviews_analyzed": 22,
+    "negative_review_ratio": 0.091,
+    "size_fit_defect_score": 0.080,
+    "fabric_quality_defect_score": 0.100,
+    "color_mismatch_score": 0.010,
+    "computed_timestamp": "2026-11-03T00:00:00Z"
+  }
+}

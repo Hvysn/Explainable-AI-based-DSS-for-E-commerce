@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # In-Memory Buffer & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: reverse_logistics_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # Core FastAPI Gateway + XGBoost + TreeSHAP + Cost Engine
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reverse_logistics_api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Warehouse Supervisor UI (Nginx Alpine serving static dashboard)
+  frontend:
+    image: nginx:alpine
+    container_name: reverse_logistics_dashboard
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+    restart: unless-stopped
