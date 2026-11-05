@@ -1,37 +1,88 @@
 /**
- * Node.js Express Backend & Authentication Gateway
+ * Node.js Express Authentication Gateway
  * JHJ eCommerce Reverse Logistics DSS
- * Authors: Hemavarshini Y, Jeyashree Narayanan A, Jayanth S
+ *
+ * Security posture:
+ *  - Passwords and 2FA answers are hashed with bcrypt (never stored in plaintext).
+ *  - Stateless JWT access tokens (short-lived) issued in an httpOnly cookie and
+ *    also returned for non-cookie clients.
+ *  - Challenge tokens are single-purpose and expire in minutes.
+ *  - Secrets come from the environment, never source code.
+ *  - Helmet, strict CORS allow-list, rate limiting and schema validation.
  */
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+
+const config = require('./config');
+const store = require('./store');
+const auth = require('./auth');
+const {
+  validate,
+  step1Schema,
+  step2Schema,
+  registerSchema,
+  updateSecuritySchema,
+  creatorPinSchema
+} = require('./validation');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+if (config.isProd) {
+  app.set('trust proxy', 1);
+}
 
-const CREATOR_MASTER_PIN = "2026";
-const TEAM_INVITE_CODE = "JHJ-2026";
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (config.corsOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('Origin not allowed by CORS.'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 600
+  })
+);
+app.use(express.json({ limit: '100kb' }));
+app.use(cookieParser());
 
-// Initial User Database with Hemavarshini as the Super Admin / Creator
-let users = {
-  "hv@jhj": {
-    userId: "hv@jhj",
-    fullName: "Hemavarshini Y",
-    password: "052027",
-    role: "Creator / Super Admin",
-    isCreator: true,
-    status: "ACTIVE",
-    question: "who is your spirit animal",
-    answer: "kungfupanda",
-    avatar: "HV"
-  }
-};
+const globalLimiter = rateLimit({
+  windowMs: config.rateLimit.globalWindowMs,
+  max: config.rateLimit.globalMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Health checks and FastAPI's session-introspection calls should not consume
+  // the per-IP request budget shared by all authenticated users.
+  skip: (req) =>
+    (req.method === 'GET' && req.path === '/api/health') ||
+    (req.method === 'GET' && req.path === '/api/auth/me'),
+  message: { error: 'Too many requests. Please slow down.' }
+});
 
-// Health Check
+const authLimiter = rateLimit({
+  windowMs: config.rateLimit.authWindowMs,
+  max: config.rateLimit.authMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Try again later.' }
+});
+
+app.use('/api', globalLimiter);
+
+// A dummy hash keeps "unknown user" and "wrong password" work factors similar.
+const DUMMY_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO1sLq2fJ7zWJpG0kNn8Y8XbGq2qQ7kK6';
+
+/* -------------------------------------------------------------------------- */
+/* Health                                                                     */
+/* -------------------------------------------------------------------------- */
+
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ONLINE',
@@ -40,131 +91,216 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// 1. Auth Step 1: User ID & Password Check
-app.post('/api/auth/step1', (req, res) => {
-  const { userId, password } = req.body;
-  const uid = (userId || '').trim().toLowerCase();
-  const user = users[uid];
+/* -------------------------------------------------------------------------- */
+/* Authentication                                                             */
+/* -------------------------------------------------------------------------- */
 
-  if (!user) {
-    return res.status(404).json({ error: "User ID not found. Click 'Register Your Account' if you have an invite code." });
-  }
+// Step 1: verify User ID + password, return a short-lived 2FA challenge.
+app.post('/api/auth/step1', authLimiter, validate(step1Schema), async (req, res, next) => {
+  try {
+    const { userId, password } = req.validated;
+    const user = store.findByUserId(userId);
 
-  if (user.password !== password) {
-    return res.status(401).json({ error: "Incorrect password." });
-  }
+    const passwordOk = user
+      ? await store.verifyPassword(user, password)
+      : await store.verifyPassword({ passwordHash: DUMMY_HASH }, password);
 
-  // Password valid -> Send 2FA Challenge Question
-  res.json({
-    status: 'ACTIVE_CHALLENGE_REQUIRED',
-    fullName: user.fullName,
-    userId: user.userId,
-    question: user.question
-  });
-});
+    if (!user || !passwordOk || user.status !== 'ACTIVE') {
+      return res.status(401).json({ error: 'Invalid User ID or password.' });
+    }
 
-// 2. Auth Step 2: 2FA Answer Verification (Masked in dots)
-app.post('/api/auth/step2', (req, res) => {
-  const { userId, answer } = req.body;
-  const uid = (userId || '').trim().toLowerCase();
-  const user = users[uid];
-
-  if (!user || user.status !== 'ACTIVE') {
-    return res.status(400).json({ error: 'Invalid user session.' });
-  }
-
-  const cleanAns = (answer || '').trim().toLowerCase();
-  if (cleanAns !== user.answer.toLowerCase()) {
-    return res.status(401).json({ error: 'Security answer does not match our records.' });
-  }
-
-  res.json({
-    message: '2FA Identity verified!',
-    user: {
+    const challengeToken = auth.signChallengeToken(user);
+    return res.json({
+      status: 'ACTIVE_CHALLENGE_REQUIRED',
+      challengeToken,
       userId: user.userId,
       fullName: user.fullName,
-      role: user.role,
-      avatar: user.avatar
-    }
-  });
+      question: user.question
+    });
+  } catch (err) {
+    return next(err);
+  }
 });
 
-// 3. Teammate Self-Registration (Decides own User ID, Password, Question & Answer)
-app.post('/api/auth/register-teammate', (req, res) => {
-  const { inviteCode, fullName, userId, password, question, answer } = req.body;
+// Step 2: verify the 2FA answer against the signed challenge, issue a session.
+app.post('/api/auth/step2', authLimiter, validate(step2Schema), async (req, res, next) => {
+  try {
+    const { challengeToken, answer } = req.validated;
 
-  if (inviteCode !== TEAM_INVITE_CODE) {
-    return res.status(403).json({ error: 'Invalid Team Invite Code. Please request the code from Hemavarshini.' });
+    let payload;
+    try {
+      payload = auth.verifyToken(challengeToken, '2fa');
+    } catch (_) {
+      return res.status(401).json({ error: 'Challenge expired or invalid. Please sign in again.' });
+    }
+
+    const user = store.findByUserId(payload.sub);
+    if (!user || user.status !== 'ACTIVE' || (user.tokenVersion || 0) !== (payload.ver || 0)) {
+      return res.status(401).json({ error: 'Invalid user session.' });
+    }
+
+    const answerOk = await store.verifyAnswer(user, answer);
+    if (!answerOk) {
+      return res.status(401).json({ error: 'Security answer does not match our records.' });
+    }
+
+    const token = auth.signAccessToken(user);
+    auth.setAuthCookie(res, token);
+
+    return res.json({
+      message: '2FA identity verified.',
+      token,
+      user: store.publicUser(user)
+    });
+  } catch (err) {
+    return next(err);
   }
+});
 
-  const uid = (userId || '').trim().toLowerCase();
-  if (users[uid]) {
-    return res.status(400).json({ error: 'This User ID is already taken. Please choose another one.' });
-  }
+// Teammate self-registration using a creator-issued invite code.
+app.post('/api/auth/register-teammate', authLimiter, validate(registerSchema), async (req, res, next) => {
+  try {
+    if (!config.inviteCode || !auth.safeEqual(req.validated.inviteCode, config.inviteCode)) {
+      return res.status(403).json({ error: 'Invalid Team Invite Code.' });
+    }
 
-  const initials = fullName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-
-  users[uid] = {
-    userId: uid,
-    fullName: fullName,
-    password: password,
-    role: 'Co-Supervisor',
-    isCreator: false,
-    status: 'ACTIVE',
-    question: question,
-    answer: answer.trim().toLowerCase(),
-    avatar: initials
-  };
-
-  res.json({
-    message: `Account activated for ${fullName}!`,
-    user: {
-      userId: uid,
-      fullName: fullName,
+    const user = await store.createUser({
+      userId: req.validated.userId,
+      fullName: req.validated.fullName,
+      password: req.validated.password,
+      question: req.validated.question,
+      answer: req.validated.answer,
       role: 'Co-Supervisor',
-      avatar: initials
+      isCreator: false
+    });
+
+    const token = auth.signAccessToken(user);
+    auth.setAuthCookie(res, token);
+
+    return res.status(201).json({
+      message: `Account activated for ${user.fullName}.`,
+      token,
+      user: store.publicUser(user)
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  auth.clearAuthCookie(res);
+  res.json({ message: 'Signed out.' });
+});
+
+app.get('/api/auth/me', auth.authenticate, (req, res) => {
+  res.json({ user: store.publicUser(req.user) });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Team management                                                            */
+/* -------------------------------------------------------------------------- */
+
+app.get('/api/team', auth.authenticate, (req, res) => {
+  res.json({ team: store.listUsers() });
+});
+
+// Creator verifies the master PIN to reveal the team invite code.
+app.post(
+  '/api/team/verify-creator',
+  authLimiter,
+  auth.authenticate,
+  auth.requireCreator,
+  validate(creatorPinSchema),
+  (req, res) => {
+    if (!config.creatorPin) {
+      return res.status(503).json({ error: 'Creator PIN is not configured on this server.' });
     }
+    if (!auth.safeEqual(req.validated.creatorPin, config.creatorPin)) {
+      return res.status(403).json({ error: 'Incorrect Creator Master PIN.' });
+    }
+    if (!config.inviteCode) {
+      return res.status(503).json({ error: 'Team invite code is not configured on this server.' });
+    }
+    return res.json({ inviteCode: config.inviteCode });
+  }
+);
+
+/* -------------------------------------------------------------------------- */
+/* Account security                                                           */
+/* -------------------------------------------------------------------------- */
+
+// Users may only update their own credentials. A current password is required.
+app.put(
+  '/api/user/security',
+  auth.authenticate,
+  validate(updateSecuritySchema),
+  async (req, res, next) => {
+    try {
+      const { currentPassword, newPassword, question, answer } = req.validated;
+
+      const passwordOk = await store.verifyPassword(req.user, currentPassword);
+      if (!passwordOk) {
+        return res.status(401).json({ error: 'Current password is incorrect.' });
+      }
+
+      const updated = await store.updateUser(req.user.userId, {
+        newPassword,
+        question,
+        answer
+      });
+
+      // Re-issue a token because the token version may have changed.
+      const token = auth.signAccessToken(updated);
+      auth.setAuthCookie(res, token);
+
+      return res.json({
+        message: 'Security credentials updated successfully.',
+        token,
+        user: store.publicUser(updated)
+      });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/* -------------------------------------------------------------------------- */
+/* Errors                                                                     */
+/* -------------------------------------------------------------------------- */
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found.' });
+});
+
+app.use((err, req, res, _next) => {
+  if (err && err.status === 409) {
+    return res.status(409).json({ error: err.message });
+  }
+  if (err && err.message === 'Origin not allowed by CORS.') {
+    return res.status(403).json({ error: 'Origin not allowed.' });
+  }
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Malformed JSON body.' });
+  }
+  console.error('[server] Unhandled error:', err && err.message);
+  return res.status(500).json({ error: 'Internal server error.' });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Bootstrap                                                                  */
+/* -------------------------------------------------------------------------- */
+
+async function start() {
+  await store.seedAdminIfNeeded();
+  app.listen(config.port, () => {
+    console.log(`JHJ DSS auth gateway listening on http://localhost:${config.port}`);
+    console.log(`CORS origins: ${config.corsOrigins.join(', ')}`);
   });
+}
+
+start().catch((err) => {
+  console.error('[server] Failed to start:', err.message);
+  process.exit(1);
 });
 
-// 4. Team List
-app.get('/api/team', (req, res) => {
-  const sanitized = Object.values(users).map(u => ({
-    userId: u.userId,
-    fullName: u.fullName,
-    role: u.role,
-    isCreator: u.isCreator,
-    status: u.status
-  }));
-  res.json({ team: sanitized });
-});
-
-// 5. Creator Verifies PIN to retrieve Invite Code
-app.post('/api/team/verify-creator', (req, res) => {
-  const { creatorPin } = req.body;
-  if (creatorPin !== CREATOR_MASTER_PIN) {
-    return res.status(403).json({ error: 'Incorrect Creator Master PIN!' });
-  }
-  res.json({ inviteCode: TEAM_INVITE_CODE });
-});
-
-// 6. User Updates Own Security Settings
-app.put('/api/user/security', (req, res) => {
-  const { userId, newPassword, question, answer } = req.body;
-  const uid = (userId || '').trim().toLowerCase();
-  const user = users[uid];
-
-  if (!user) {
-    return res.status(404).json({ error: 'User not found.' });
-  }
-
-  if (newPassword) user.password = newPassword;
-  if (question) user.question = question;
-  if (answer) user.answer = answer.trim().toLowerCase();
-
-  res.json({ message: 'Security credentials updated successfully!' });
-});
-
-app.listen(PORT, () => {
-  console.log(`JHJ DSS Node.js Gateway running at http://localhost:${PORT}`);
-});
+module.exports = app;

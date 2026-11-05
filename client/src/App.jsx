@@ -3,23 +3,7 @@ import {
   ShieldAlert, Clock, Layers, TrendingDown, Wallet, Sparkles, Box, Plus, 
   Send, Bot, CheckCircle, Lock, Users, Settings, LogOut, Check, Key
 } from 'lucide-react';
-
-const CREATOR_MASTER_PIN = "2026";
-const TEAM_INVITE_CODE = "JHJ-2026";
-
-const INITIAL_USERS = {
-  "hv@jhj": {
-    userId: "hv@jhj",
-    fullName: "Hemavarshini Y",
-    password: "052027",
-    role: "Creator / Super Admin",
-    isCreator: true,
-    status: "ACTIVE",
-    question: "who is your spirit animal",
-    answer: "kungfupanda",
-    avatar: "HV"
-  }
-};
+import { authApi } from './api';
 
 const INITIAL_ORDERS = [
   {
@@ -130,21 +114,16 @@ const INITIAL_ORDERS = [
 ];
 
 export default function App() {
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem("jhj_team_users_v3");
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
-  const [currentUser, setCurrentUser] = useState(() => {
-    const sess = sessionStorage.getItem("jhj_active_session");
-    return sess ? JSON.parse(sess) : null;
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   const [authView, setAuthView] = useState('LOGIN'); // LOGIN, REGISTER, CHALLENGE
-  const [pendingUser, setPendingUser] = useState(null);
+  const [pendingChallenge, setPendingChallenge] = useState(null);
   const [loginId, setLoginId] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [challengeAnswer, setChallengeAnswer] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
   // Teammate Self-Registration State
   const [regCode, setRegCode] = useState('');
@@ -161,11 +140,17 @@ export default function App() {
   const [creatorPinVerified, setCreatorPinVerified] = useState(false);
   const [creatorPinInput, setCreatorPinInput] = useState('');
   const [creatorPinError, setCreatorPinError] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
+  const [team, setTeam] = useState([]);
+  const [teamError, setTeamError] = useState('');
 
   // Settings
+  const [settingsCurrentPass, setSettingsCurrentPass] = useState('');
   const [settingsPass, setSettingsPass] = useState('');
   const [settingsQ, setSettingsQ] = useState('');
   const [settingsAns, setSettingsAns] = useState('');
+  const [settingsError, setSettingsError] = useState('');
+  const [settingsBusy, setSettingsBusy] = useState(false);
 
   // Orders & Dashboard
   const [orders, setOrders] = useState(INITIAL_ORDERS);
@@ -177,112 +162,188 @@ export default function App() {
   const [totalSavings, setTotalSavings] = useState(1845.0);
 
   useEffect(() => {
-    localStorage.setItem("jhj_team_users_v3", JSON.stringify(users));
-  }, [users]);
+    let cancelled = false;
+    authApi
+      .me()
+      .then((data) => {
+        if (!cancelled) setCurrentUser(data.user);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 2800);
   };
 
-  // STEP 1: Verify Login
-  const handleLoginSubmit = (e) => {
-    e.preventDefault();
-    setAuthError('');
-    const u = users[loginId.trim().toLowerCase()];
-
-    if (!u) {
-      setAuthError("User ID not found. Click 'Register Your Account' below if you have an invite code.");
-      return;
-    }
-
-    if (u.password !== loginPass) {
-      setAuthError('Incorrect password.');
-      return;
-    }
-
-    setPendingUser(u);
-    setAuthView('CHALLENGE');
-  };
-
-  // STEP 2: Verify 2FA Challenge Answer (Dots Masked)
-  const handleChallengeSubmit = (e) => {
-    e.preventDefault();
-    setAuthError('');
-
-    if (challengeAnswer.trim().toLowerCase() !== pendingUser.answer.trim().toLowerCase()) {
-      setAuthError('Incorrect security challenge answer. Access denied.');
-      return;
-    }
-
-    setCurrentUser(pendingUser);
-    sessionStorage.setItem("jhj_active_session", JSON.stringify(pendingUser));
-    setAuthView('DONE');
-    showToast(`Identity verified! Logged in as ${pendingUser.fullName}`);
-  };
-
-  // Teammate Self-Registration Submit
-  const handleRegisterSubmit = (e) => {
-    e.preventDefault();
-    setAuthError('');
-
-    if (regCode.trim() !== TEAM_INVITE_CODE) {
-      setAuthError('Invalid Team Invite Code. Please request the code from Hemavarshini.');
-      return;
-    }
-
-    const uid = regId.trim().toLowerCase();
-    if (users[uid]) {
-      setAuthError('This User ID is already taken. Please choose another one.');
-      return;
-    }
-
-    const initials = regName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-
-    const newUser = {
-      userId: uid,
-      fullName: regName,
-      password: regPass,
-      role: 'Co-Supervisor',
-      isCreator: false,
-      status: 'ACTIVE',
-      question: regQ,
-      answer: regAns.trim().toLowerCase(),
-      avatar: initials
-    };
-
-    const updated = { ...users, [uid]: newUser };
-    setUsers(updated);
-    setCurrentUser(newUser);
-    sessionStorage.setItem("jhj_active_session", JSON.stringify(newUser));
-    setAuthView('DONE');
-    showToast(`🎉 Welcome to South Hub, ${regName}!`);
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem("jhj_active_session");
-    setCurrentUser(null);
-    setPendingUser(null);
+  const resetAuthForm = () => {
     setLoginId('');
     setLoginPass('');
     setChallengeAnswer('');
+    setPendingChallenge(null);
+    setAuthError('');
+  };
+
+  const handleSessionExpired = () => {
+    setCurrentUser(null);
     setAuthView('LOGIN');
+    resetAuthForm();
+    showToast('Your session expired. Please sign in again.');
+  };
+
+  // STEP 1: Verify credentials server-side, receive a 2FA challenge token.
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthBusy(true);
+    try {
+      const data = await authApi.step1({
+        userId: loginId.trim().toLowerCase(),
+        password: loginPass
+      });
+      setPendingChallenge(data);
+      setLoginPass('');
+      setAuthView('CHALLENGE');
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  // STEP 2: Verify the 2FA answer and receive the session cookie.
+  const handleChallengeSubmit = async (e) => {
+    e.preventDefault();
+    if (!pendingChallenge) {
+      setAuthView('LOGIN');
+      return;
+    }
+    setAuthError('');
+    setAuthBusy(true);
+    try {
+      const data = await authApi.step2({
+        challengeToken: pendingChallenge.challengeToken,
+        answer: challengeAnswer
+      });
+      setCurrentUser(data.user);
+      setChallengeAnswer('');
+      setPendingChallenge(null);
+      setAuthView('DONE');
+      showToast(`Identity verified! Logged in as ${data.user.fullName}`);
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  // Teammate Self-Registration Submit
+  const handleRegisterSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthBusy(true);
+    try {
+      const data = await authApi.register({
+        inviteCode: regCode.trim(),
+        fullName: regName.trim(),
+        userId: regId.trim().toLowerCase(),
+        password: regPass,
+        question: regQ.trim(),
+        answer: regAns.trim()
+      });
+      setCurrentUser(data.user);
+      setAuthView('DONE');
+      showToast(`Welcome to South Hub, ${data.user.fullName}!`);
+    } catch (err) {
+      setAuthError(err.message);
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch (_) {
+      /* clear the local session even if the server call fails */
+    }
+    setCurrentUser(null);
+    setAuthView('LOGIN');
+    resetAuthForm();
+    setShowMobMenu(false);
     showToast('Securely logged out.');
   };
 
-  const handleSaveSecurity = (e) => {
+  const handleSaveSecurity = async (e) => {
     e.preventDefault();
-    const updatedUser = {
-      ...currentUser,
-      password: settingsPass,
-      question: settingsQ,
-      answer: settingsAns.trim().toLowerCase()
-    };
-    setUsers({ ...users, [currentUser.userId]: updatedUser });
-    setCurrentUser(updatedUser);
-    sessionStorage.setItem("jhj_active_session", JSON.stringify(updatedUser));
-    setShowSettingsModal(false);
-    showToast('Your password & 2FA security challenge updated! ✓');
+    setSettingsError('');
+
+    const payload = { currentPassword: settingsCurrentPass };
+    if (settingsPass.trim()) payload.newPassword = settingsPass.trim();
+    if (settingsQ.trim()) payload.question = settingsQ.trim();
+    if (settingsAns.trim()) payload.answer = settingsAns.trim().toLowerCase();
+
+    if (!payload.newPassword && !payload.question && !payload.answer) {
+      setSettingsError('Enter a new password or updated challenge details.');
+      return;
+    }
+
+    setSettingsBusy(true);
+    try {
+      const data = await authApi.updateSecurity(payload);
+      setCurrentUser(data.user);
+      setShowSettingsModal(false);
+      setSettingsCurrentPass('');
+      setSettingsPass('');
+      setSettingsQ('');
+      setSettingsAns('');
+      showToast('Your password & 2FA security challenge updated!');
+    } catch (err) {
+      if (err.status === 401) {
+        setSettingsError('Current password is incorrect.');
+      } else {
+        setSettingsError(err.message);
+      }
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+
+  const openTeamModal = async () => {
+    setShowTeamModal(true);
+    setTeamError('');
+    setCreatorPinVerified(false);
+    setCreatorPinInput('');
+    setCreatorPinError('');
+    setInviteCode('');
+    try {
+      const data = await authApi.team();
+      setTeam(data.team || []);
+    } catch (err) {
+      if (err.status === 401) handleSessionExpired();
+      else setTeamError(err.message);
+    }
+  };
+
+  const handleVerifyCreator = async () => {
+    setCreatorPinError('');
+    try {
+      const data = await authApi.verifyCreator({ creatorPin: creatorPinInput });
+      setCreatorPinVerified(true);
+      setInviteCode(data.inviteCode);
+      setCreatorPinInput('');
+      showToast('Creator verified! Invite key unlocked.');
+    } catch (err) {
+      setCreatorPinError(err.message);
+    }
   };
 
   const applyIntervention = () => {
@@ -340,6 +401,21 @@ export default function App() {
     (`${o.id} ${o.name} ${o.sku} ${o.tag}`.toLowerCase().includes(search.toLowerCase()))
   );
 
+  if (!authReady) {
+    return (
+      <div id="app">
+        <div className="login-screen">
+          <div className="login-card" style={{textAlign:'center'}}>
+            <div className="logo-slot">
+              <div className="logo-placeholder">JHJ</div>
+              <div><strong>JHJ eCommerce<br/>DSS System</strong><small>Verifying secure session…</small></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div id="app">
       {/* AUTHENTICATION OVERLAY */}
@@ -379,7 +455,9 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="primary-btn login-submit">Verify Credentials →</button>
+                <button type="submit" className="primary-btn login-submit" disabled={authBusy}>
+                  {authBusy ? 'Verifying…' : 'Verify Credentials →'}
+                </button>
                 {authError && <div className="login-error">{authError}</div>}
 
                 <div style={{marginTop:16,paddingTop:12,borderTop:'1px solid var(--line)',textAlign:'center'}}>
@@ -402,7 +480,7 @@ export default function App() {
                     type="password" 
                     value={regCode} 
                     onChange={e => setRegCode(e.target.value)} 
-                    placeholder="Enter Invite Code (Default: JHJ-2026)" 
+                    placeholder="Enter the invite code from your Creator"
                     required 
                   />
                 </div>
@@ -463,7 +541,9 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="primary-btn login-submit">Create Account &amp; Unlock Terminal 🚀</button>
+                <button type="submit" className="primary-btn login-submit" disabled={authBusy}>
+                  {authBusy ? 'Creating account…' : 'Create Account & Unlock Terminal 🚀'}
+                </button>
                 <button type="button" className="secondary-btn" style={{width:'100%',marginTop:8}} onClick={() => setAuthView('LOGIN')}>
                   ← Back to Sign In
                 </button>
@@ -475,10 +555,10 @@ export default function App() {
               <form onSubmit={handleChallengeSubmit}>
                 <div className="auth-step-pill">Step 2 of 2 · Two-Factor Challenge</div>
                 <h2>Identity Verification</h2>
-                <p className="login-sub">Hello {pendingUser.fullName}. Please answer your security challenge.</p>
+                <p className="login-sub">Hello {pendingChallenge?.fullName}. Please answer your security challenge.</p>
 
                 <div className="field">
-                  <label style={{color:'#2563eb',fontWeight:800,fontSize:11}}>{pendingUser.question}</label>
+                  <label style={{color:'#2563eb',fontWeight:800,fontSize:11}}>{pendingChallenge?.question}</label>
                   <input 
                     type="password" 
                     value={challengeAnswer} 
@@ -489,8 +569,10 @@ export default function App() {
                   />
                 </div>
 
-                <button type="submit" className="primary-btn login-submit">Complete 2FA Sign-In 🔓</button>
-                <button type="button" className="secondary-btn" style={{width:'100%',marginTop:10}} onClick={() => setAuthView('LOGIN')}>
+                <button type="submit" className="primary-btn login-submit" disabled={authBusy}>
+                  {authBusy ? 'Verifying…' : 'Complete 2FA Sign-In 🔓'}
+                </button>
+                <button type="button" className="secondary-btn" style={{width:'100%',marginTop:10}} onClick={() => { setAuthView('LOGIN'); setPendingChallenge(null); setAuthError(''); }}>
                   ← Change User ID
                 </button>
                 {authError && <div className="login-error">{authError}</div>}
@@ -526,15 +608,17 @@ export default function App() {
           <nav className="nav">
             <button onClick={() => {
               if (currentUser) {
-                setSettingsPass(currentUser.password || '');
-                setSettingsQ(currentUser.question || '');
-                setSettingsAns(currentUser.answer || '');
+                setSettingsCurrentPass('');
+                setSettingsPass('');
+                setSettingsQ('');
+                setSettingsAns('');
+                setSettingsError('');
                 setShowSettingsModal(true);
               }
             }}>
               <Settings size={15}/> My Security &amp; 2FA
             </button>
-            <button onClick={() => setShowTeamModal(true)}>
+            <button onClick={openTeamModal}>
               <Users size={15}/> Invite Teammates
             </button>
           </nav>
@@ -754,7 +838,7 @@ export default function App() {
             </div>
 
             <div className="team-list">
-              {Object.values(users).map(u => (
+              {team.map(u => (
                 <div key={u.userId} className="team-item">
                   <div>
                     <strong>{u.fullName}</strong>
@@ -765,45 +849,43 @@ export default function App() {
                   </span>
                 </div>
               ))}
+              {team.length === 0 && !teamError && (
+                <div style={{fontSize:11,color:'var(--muted)',padding:8}}>Loading team roster…</div>
+              )}
             </div>
+            {teamError && <div className="login-error" style={{textAlign:'left'}}>{teamError}</div>}
 
             {!creatorPinVerified ? (
               <div className="auth-gate-box">
                 <strong>🔒 Creator Master PIN Required to View Invite Key</strong>
-                <p>Enter your PIN to unlock the Team Invite Code for Jayanth and Jeyashree.</p>
+                <p>Enter your PIN to unlock the Team Invite Code. Only the Creator account can perform this action.</p>
                 <div style={{display:'flex',gap:8}}>
                   <input 
                     type="password" 
-                    placeholder="Creator Master PIN (Default: 2026)" 
+                    placeholder="Creator Master PIN"
                     value={creatorPinInput} 
                     onChange={e => setCreatorPinInput(e.target.value)} 
                   />
-                  <button className="primary-btn" onClick={() => {
-                    if (creatorPinInput === CREATOR_MASTER_PIN) {
-                      setCreatorPinVerified(true);
-                      setCreatorPinError('');
-                    } else {
-                      setCreatorPinError('Incorrect Creator Master PIN!');
-                    }
-                  }}>Verify</button>
+                  <button className="primary-btn" onClick={handleVerifyCreator}>Verify</button>
                 </div>
                 {creatorPinError && <div className="login-error" style={{textAlign:'left'}}>{creatorPinError}</div>}
               </div>
             ) : (
               <div style={{background:'#f0fdf4',border:'1.5px solid #86efac',borderRadius:14,padding:18}}>
-                <div style={{display:'flex',justifyContent:space-between,alignItems:'center'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <strong style={{fontSize:13,color:'#166534'}}>✓ Active Team Invite Code:</strong>
                   <span className="role-badge role-creator">Creator Authorization</span>
                 </div>
                 <div style={{margin:'12px 0',background:'#fff',border:'1px dashed #22c55e',padding:12,borderRadius:10,textAlign:'center'}}>
-                  <span style={{fontSize:18,fontFamily:'monospace',fontWeight:900,color:'#15803d',letterSpacing:2}}>JHJ-2026</span>
+                  <span style={{fontSize:18,fontFamily:'monospace',fontWeight:900,color:'#15803d',letterSpacing:2}}>{inviteCode || '—'}</span>
                 </div>
-                <p style="font-size:11px;color:#15803d;margin:0 0 10px;line-height:1.5">
-                  Share this code with <strong>Jayanth S</strong> and <strong>Jeyashree Narayanan A</strong>. They click <em>"Have a Team Invite Code? Register Your Account Here"</em> on the sign-in page to set up their own User ID, Password, and Spirit Animal/Question with masked answers!
+                <p style={{fontSize:11,color:'#15803d',margin:'0 0 10px',lineHeight:1.5}}>
+                  Share this code with your teammates. They click <em>"Have a Team Invite Code? Register Your Account Here"</em> on the sign-in page and choose their own credentials.
                 </p>
-                <button className="primary-btn" style={{width:'100%'}} onClick={() => {
-                  navigator.clipboard.writeText('JHJ-2026');
-                  showToast('Invite Code JHJ-2026 copied to clipboard!');
+                <button className="primary-btn" style={{width:'100%'}} disabled={!inviteCode} onClick={() => {
+                  if (!inviteCode) return;
+                  navigator.clipboard.writeText(inviteCode);
+                  showToast('Invite code copied to clipboard!');
                 }}>
                   Copy Invite Code to Clipboard
                 </button>
@@ -827,18 +909,48 @@ export default function App() {
                 <input type="text" value={currentUser?.userId} disabled style={{background:'#f3f4f6',color:'#6b7280'}} />
               </div>
               <div className="field">
-                <label>New Password</label>
-                <input type="password" value={settingsPass} onChange={e => setSettingsPass(e.target.value)} required />
+                <label>Current Password (required)</label>
+                <input
+                  type="password"
+                  value={settingsCurrentPass}
+                  onChange={e => setSettingsCurrentPass(e.target.value)}
+                  placeholder="Confirm your current password"
+                  autoComplete="current-password"
+                  required
+                />
               </div>
               <div className="field">
-                <label>My 2FA Challenge Question</label>
-                <input type="text" value={settingsQ} onChange={e => setSettingsQ(e.target.value)} required />
+                <label>New Password (optional)</label>
+                <input
+                  type="password"
+                  value={settingsPass}
+                  onChange={e => setSettingsPass(e.target.value)}
+                  placeholder="Leave blank to keep current"
+                  autoComplete="new-password"
+                />
               </div>
               <div className="field">
-                <label>My Secret Answer (Masked in dots)</label>
-                <input type="password" value={settingsAns} onChange={e => setSettingsAns(e.target.value)} required />
+                <label>New 2FA Challenge Question (optional)</label>
+                <input
+                  type="text"
+                  value={settingsQ}
+                  onChange={e => setSettingsQ(e.target.value)}
+                  placeholder="Leave blank to keep current"
+                />
               </div>
-              <button type="submit" className="primary-btn" style={{width:'100%',marginTop:14}}>Save Updates ✓</button>
+              <div className="field">
+                <label>New Secret Answer (optional, masked)</label>
+                <input
+                  type="password"
+                  value={settingsAns}
+                  onChange={e => setSettingsAns(e.target.value)}
+                  placeholder="Leave blank to keep current"
+                />
+              </div>
+              {settingsError && <div className="login-error">{settingsError}</div>}
+              <button type="submit" className="primary-btn" style={{width:'100%',marginTop:14}} disabled={settingsBusy}>
+                {settingsBusy ? 'Saving…' : 'Save Updates ✓'}
+              </button>
             </form>
           </div>
         </div>
@@ -873,7 +985,7 @@ export default function App() {
           </button>
           <button 
             className="mob-nav-btn"
-            onClick={() => setShowTeamModal(true)}
+            onClick={openTeamModal}
           >
             <Users size={18}/>
             <span>Team</span>
@@ -908,9 +1020,11 @@ export default function App() {
                 style={{textAlign:'left',display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}
                 onClick={() => {
                   setShowMobMenu(false);
-                  setSettingsPass(currentUser?.password || '');
-                  setSettingsQ(currentUser?.question || '');
-                  setSettingsAns(currentUser?.answer || '');
+                  setSettingsCurrentPass('');
+                  setSettingsPass('');
+                  setSettingsQ('');
+                  setSettingsAns('');
+                  setSettingsError('');
                   setShowSettingsModal(true);
                 }}
               >
@@ -922,7 +1036,7 @@ export default function App() {
                 style={{textAlign:'left',display:'flex',alignItems:'center',gap:10,padding:'12px 14px'}}
                 onClick={() => {
                   setShowMobMenu(false);
-                  setShowTeamModal(true);
+                  openTeamModal();
                 }}
               >
                 <Users size={16}/>

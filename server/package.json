@@ -1,15 +1,23 @@
 {
   "name": "jhj-dss-node-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Node.js Express Authentication & Microservice Gateway for JHJ Reverse Logistics DSS",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "check": "node --check index.js && node --check config.js && node --check store.js && node --check auth.js && node --check validation.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "express": "^4.18.2"
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
