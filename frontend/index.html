@@ -934,8 +934,8 @@ h1 { font-size: 29px; letter-spacing: -1.1px; margin: 0; }
       
       <form onsubmit="handleTeammateRegistration(event)">
         <div class="field">
-          <label>Team Invite Code (Provided by Hemavarshini)</label>
-          <input type="password" id="regInviteCode" placeholder="Enter Team Invite Code (Default: JHJ-2026)" required />
+          <label>Team Invite Code (Provided by your Creator)</label>
+          <input type="password" id="regInviteCode" placeholder="Enter the invite code from your Creator" required />
         </div>
 
         <div class="reg-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1028,7 +1028,7 @@ h1 { font-size: 29px; letter-spacing: -1.1px; margin: 0; }
         <strong>🔒 Creator Authorization Required to View Invite Key</strong>
         <p>Enter your Creator Master PIN to view or change the Team Invite Code.</p>
         <div style="display:flex;gap:8px">
-          <input type="password" id="creatorPinInput" placeholder="Creator Master PIN (Default: 2026)" style="flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:11px" />
+          <input type="password" id="creatorPinInput" placeholder="Creator Master PIN" style="flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:10px;font-size:11px" />
           <button class="primary-btn" onclick="verifyCreatorPin()" style="padding:9px 15px">Verify PIN</button>
         </div>
         <div class="login-error" id="creatorPinError" style="text-align:left;margin-top:5px"></div>
@@ -1042,12 +1042,12 @@ h1 { font-size: 29px; letter-spacing: -1.1px; margin: 0; }
         <span class="role-badge role-creator">Creator Authorization</span>
       </div>
       <div style="margin:12px 0;background:#fff;border:1px dashed #22c55e;padding:12px;border-radius:10px;text-align:center">
-        <span style="font-size:18px;font-family:monospace;font-weight:900;color:#15803d;letter-spacing:2px">JHJ-2026</span>
+        <span id="inviteCodeValue" style="font-size:18px;font-family:monospace;font-weight:900;color:#15803d;letter-spacing:2px">—</span>
       </div>
       <p style="font-size:11px;color:#15803d;margin:0 0 10px;line-height:1.5">
         Share this code with <strong>Jayanth S</strong> and <strong>Jeyashree Narayanan A</strong>. They can click <em>"Have a Team Invite Code? Register Your Account Here"</em> on the sign-in page to set up their own User ID, Password, and Spirit Animal/Question with masked answers!
       </p>
-      <button class="primary-btn" style="width:100%" onclick="navigator.clipboard.writeText('JHJ-2026');toast('Invite Code JHJ-2026 copied to clipboard!')">
+      <button class="primary-btn" id="copyInviteBtn" style="width:100%" onclick="copyInviteCode()">
         Copy Invite Code to Clipboard
       </button>
     </div>
@@ -1074,22 +1074,30 @@ h1 { font-size: 29px; letter-spacing: -1.1px; margin: 0; }
       </div>
 
       <div class="field">
-        <label>New Password</label>
+        <label>Current Password (required)</label>
         <div class="password-wrap">
-          <input type="password" id="settingsNewPass" placeholder="Enter new password" required />
+          <input type="password" id="settingsCurrentPass" placeholder="Confirm your current password" autocomplete="current-password" required />
+          <button type="button" onclick="togglePassword('settingsCurrentPass')">Show</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>New Password (optional)</label>
+        <div class="password-wrap">
+          <input type="password" id="settingsNewPass" placeholder="Leave blank to keep current" autocomplete="new-password" />
           <button type="button" onclick="togglePassword('settingsNewPass')">Show</button>
         </div>
       </div>
 
       <div class="field">
-        <label>My 2FA Challenge Question</label>
-        <input type="text" id="settingsQuestion" placeholder="e.g. who is your spirit animal" required />
+        <label>New 2FA Challenge Question (optional)</label>
+        <input type="text" id="settingsQuestion" placeholder="Leave blank to keep current" />
       </div>
 
       <div class="field">
-        <label>My 2FA Secret Answer (Masked in dots)</label>
+        <label>New 2FA Secret Answer (optional, masked)</label>
         <div class="password-wrap">
-          <input type="password" id="settingsAnswer" placeholder="e.g. kungfupanda" required />
+          <input type="password" id="settingsAnswer" placeholder="Leave blank to keep current" />
           <button type="button" onclick="togglePassword('settingsAnswer')">Show</button>
         </div>
       </div>
@@ -1184,112 +1192,150 @@ h1 { font-size: 29px; letter-spacing: -1.1px; margin: 0; }
 
 <script>
 // =========================================================================
-// 1. AUTHENTICATION & MULTI-USER 2FA ENGINE (PERSISTED)
+// 1. AUTHENTICATION & MULTI-USER 2FA ENGINE (SERVER-BACKED)
 // =========================================================================
 
-const CREATOR_MASTER_PIN = "2026";
-const TEAM_INVITE_CODE = "JHJ-2026";
+// Auth gateway base URL.
+//  - Docker/nginx: same-origin (empty) so /api is proxied to the gateway.
+//  - Opened from disk: talk to the local gateway directly.
+//  - Override before this script loads with window.JHJ_API_BASE if needed.
+const API_BASE = window.JHJ_API_BASE !== undefined
+  ? window.JHJ_API_BASE
+  : (location.protocol === "file:" ? "http://localhost:5000" : "");
 
-// Initial user database:
-// - Hemavarshini (Creator): User ID "hv@jhj", Password "052027", Question "who is your spirit animal", Answer "kungfupanda"
-const INITIAL_USERS = {
-  "hv@jhj": {
-    userId: "hv@jhj",
-    fullName: "Hemavarshini Y",
-    password: "052027",
-    role: "Creator / Super Admin",
-    isCreator: true,
-    status: "ACTIVE",
-    question: "who is your spirit animal",
-    answer: "kungfupanda",
-    avatar: "HV"
-  }
-};
+const FASTAPI_BASE = window.JHJ_FASTAPI_BASE || "http://localhost:8000";
+const TOKEN_KEY = "jhj_session_token";
 
-function getUsers() {
-  const saved = localStorage.getItem("jhj_team_users_v3");
-  if (!saved) {
-    localStorage.setItem("jhj_team_users_v3", JSON.stringify(INITIAL_USERS));
-    return INITIAL_USERS;
-  }
-  return JSON.parse(saved);
-}
-
-function saveUsers(users) {
-  localStorage.setItem("jhj_team_users_v3", JSON.stringify(users));
-}
-
-let pendingAuthUser = null;
 let currentSessionUser = null;
+let pendingAuthChallenge = null;
 
-function checkSession() {
-  const sess = sessionStorage.getItem("jhj_active_session");
-  if (sess) {
-    currentSessionUser = JSON.parse(sess);
+function getToken() {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  const headers = {};
+  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  const token = getToken();
+  if (opts.auth !== false && token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: opts.method || "GET",
+    headers,
+    credentials: "include",
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body)
+  });
+
+  let data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `Request failed (${res.status}).`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+function setSession(data) {
+  currentSessionUser = data.user;
+  if (data.token) sessionStorage.setItem(TOKEN_KEY, data.token);
+  applyLoggedInUser(currentSessionUser);
+}
+
+function clearSession() {
+  currentSessionUser = null;
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+function showLoginScreen() {
+  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("authStep1").style.display = "block";
+  document.getElementById("authRegisterView").style.display = "none";
+  document.getElementById("authStep2").style.display = "none";
+}
+
+async function checkSession() {
+  if (!getToken()) {
+    showLoginScreen();
+    return;
+  }
+  try {
+    const data = await api("/api/auth/me");
+    currentSessionUser = data.user;
     applyLoggedInUser(currentSessionUser);
     document.getElementById("loginScreen").style.display = "none";
-  } else {
-    document.getElementById("loginScreen").style.display = "flex";
-    document.getElementById("authStep1").style.display = "block";
-    document.getElementById("authRegisterView").style.display = "none";
-    document.getElementById("authStep2").style.display = "none";
+  } catch (_) {
+    clearSession();
+    showLoginScreen();
   }
 }
 
-// STEP 1: Verify User ID and Password
-function handleAuthStep1(e) {
+// STEP 1: Verify User ID and Password against the auth gateway.
+async function handleAuthStep1(e) {
   e.preventDefault();
   const uid = document.getElementById("authUserId").value.trim().toLowerCase();
   const pass = document.getElementById("authPassword").value;
   const errorEl = document.getElementById("authError1");
+  const submitBtn = e.target.querySelector('button[type="submit"]');
   errorEl.textContent = "";
+  if (submitBtn) submitBtn.disabled = true;
 
-  const users = getUsers();
-  const user = users[uid];
+  try {
+    const data = await api("/api/auth/step1", {
+      method: "POST",
+      auth: false,
+      body: { userId: uid, password: pass }
+    });
 
-  if (!user) {
-    errorEl.textContent = "User ID not found. Click 'Register Your Account' below if you have an invite code.";
-    return;
+    pendingAuthChallenge = data;
+    document.getElementById("authStep1").style.display = "none";
+    document.getElementById("authStep2").style.display = "block";
+    document.getElementById("challengeUserPrompt").textContent = `Hello ${data.fullName}. Step 2: Answer your personal security challenge to unlock South Hub.`;
+    document.getElementById("challengeQuestionLabel").textContent = data.question;
+    document.getElementById("challengeAnswerInput").value = "";
+    document.getElementById("challengeAnswerInput").focus();
+  } catch (err) {
+    errorEl.textContent = err.message;
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-
-  if (user.password !== pass) {
-    errorEl.textContent = "Incorrect password.";
-    return;
-  }
-
-  // Password valid -> Proceed to Step 2 2FA Challenge Question
-  pendingAuthUser = user;
-  document.getElementById("authStep1").style.display = "none";
-  document.getElementById("authStep2").style.display = "block";
-  document.getElementById("challengeUserPrompt").textContent = `Hello ${user.fullName}. Step 2: Answer your personal security challenge to unlock South Hub.`;
-  document.getElementById("challengeQuestionLabel").textContent = user.question;
-  document.getElementById("challengeAnswerInput").value = "";
-  document.getElementById("challengeAnswerInput").focus();
 }
 
 // STEP 2: Verify 2FA Answer (Dots / Masked)
-function handleAuthStep2(e) {
+async function handleAuthStep2(e) {
   e.preventDefault();
-  const ans = document.getElementById("challengeAnswerInput").value.trim().toLowerCase();
+  const ans = document.getElementById("challengeAnswerInput").value.trim();
   const errorEl = document.getElementById("authError2");
   errorEl.textContent = "";
 
-  if (!pendingAuthUser) {
+  if (!pendingAuthChallenge) {
     backToLogin();
     return;
   }
 
-  if (ans !== pendingAuthUser.answer.trim().toLowerCase()) {
-    errorEl.textContent = "Incorrect security answer. Access denied.";
-    return;
+  try {
+    const data = await api("/api/auth/step2", {
+      method: "POST",
+      auth: false,
+      body: { challengeToken: pendingAuthChallenge.challengeToken, answer: ans }
+    });
+
+    setSession(data);
+    pendingAuthChallenge = null;
+    document.getElementById("challengeAnswerInput").value = "";
+    document.getElementById("loginScreen").style.display = "none";
+    toast(`Identity verified! Logged in as ${currentSessionUser.fullName}`);
+  } catch (err) {
+    errorEl.textContent = err.message;
   }
-
-  currentSessionUser = pendingAuthUser;
-  sessionStorage.setItem("jhj_active_session", JSON.stringify(currentSessionUser));
-  applyLoggedInUser(currentSessionUser);
-
-  document.getElementById("loginScreen").style.display = "none";
-  toast(`Identity verified! Logged in as ${currentSessionUser.fullName}`);
 }
 
 // TEAMMATE SELF-REGISTRATION (Jayanth & Jeyashree decide own credentials)
@@ -1305,55 +1351,34 @@ function openTeammateRegistration() {
   document.getElementById("regError").textContent = "";
 }
 
-function handleTeammateRegistration(e) {
+async function handleTeammateRegistration(e) {
   e.preventDefault();
   const code = document.getElementById("regInviteCode").value.trim();
   const name = document.getElementById("regFullName").value.trim();
   const uid = document.getElementById("regUserId").value.trim().toLowerCase();
   const pass = document.getElementById("regPassword").value.trim();
   const q = document.getElementById("regQuestion").value.trim();
-  const ans = document.getElementById("regAnswer").value.trim().toLowerCase();
-  const err = document.getElementById("regError");
-  err.textContent = "";
+  const ans = document.getElementById("regAnswer").value.trim();
+  const errEl = document.getElementById("regError");
+  errEl.textContent = "";
 
-  if (code !== TEAM_INVITE_CODE) {
-    err.textContent = "Invalid Team Invite Code. Please request the code from Hemavarshini.";
-    return;
+  try {
+    const data = await api("/api/auth/register-teammate", {
+      method: "POST",
+      auth: false,
+      body: { inviteCode: code, fullName: name, userId: uid, password: pass, question: q, answer: ans }
+    });
+
+    setSession(data);
+    document.getElementById("loginScreen").style.display = "none";
+    toast(`Account created! Welcome to South Hub, ${data.user.fullName}!`);
+  } catch (err) {
+    errEl.textContent = err.message;
   }
-
-  const users = getUsers();
-  if (users[uid]) {
-    err.textContent = "This User ID is already taken. Please pick another one.";
-    return;
-  }
-
-  const initials = name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
-
-  users[uid] = {
-    userId: uid,
-    fullName: name,
-    password: pass,
-    role: "Co-Supervisor",
-    isCreator: false,
-    status: "ACTIVE",
-    question: q,
-    answer: ans,
-    avatar: initials
-  };
-
-  saveUsers(users);
-
-  // Directly log them in!
-  currentSessionUser = users[uid];
-  sessionStorage.setItem("jhj_active_session", JSON.stringify(currentSessionUser));
-  applyLoggedInUser(currentSessionUser);
-
-  document.getElementById("loginScreen").style.display = "none";
-  toast(`🎉 Account created! Welcome to South Hub, ${name}!`);
 }
 
 function backToLogin() {
-  pendingAuthUser = null;
+  pendingAuthChallenge = null;
   document.getElementById("authStep1").style.display = "block";
   document.getElementById("authRegisterView").style.display = "none";
   document.getElementById("authStep2").style.display = "none";
@@ -1375,7 +1400,7 @@ function applyLoggedInUser(user) {
 }
 
 function openMobileProfileMenu() {
-  const user = currentSessionUser || { fullName: 'Hemavarshini Y', role: 'Creator / Super Admin', avatar: 'HV' };
+  const user = currentSessionUser || { fullName: 'Operator', role: 'Signed out', avatar: '--' };
   document.getElementById('mobMenuAvatar').textContent = user.avatar || user.fullName.slice(0, 2).toUpperCase();
   document.getElementById('mobMenuName').textContent = user.fullName;
   document.getElementById('mobMenuRole').textContent = user.role;
@@ -1392,16 +1417,17 @@ function updateMobNav(activeId) {
   if (btn) btn.classList.add('active');
 }
 
-function logout() {
-  sessionStorage.removeItem("jhj_active_session");
-  currentSessionUser = null;
-  pendingAuthUser = null;
+async function logout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch (_) {
+    /* clear the local session even if the server is unreachable */
+  }
+  clearSession();
+  pendingAuthChallenge = null;
   document.getElementById("authUserId").value = "";
   document.getElementById("authPassword").value = "";
-  document.getElementById("loginScreen").style.display = "flex";
-  document.getElementById("authStep1").style.display = "block";
-  document.getElementById("authRegisterView").style.display = "none";
-  document.getElementById("authStep2").style.display = "none";
+  showLoginScreen();
   toast("You have been securely signed out.");
 }
 
@@ -1412,47 +1438,67 @@ function togglePassword(id) {
 
 // TEAM MANAGEMENT MODAL (VIEW INVITE KEY)
 function openTeamModal() {
-  renderTeamList();
   document.getElementById("creatorPinInput").value = "";
   document.getElementById("creatorPinError").textContent = "";
   document.getElementById("creatorGate").style.display = "block";
   document.getElementById("inviteKeyBox").style.display = "none";
   document.getElementById("teamModal").style.display = "flex";
+  renderTeamList();
 }
 
 function closeTeamModal() {
   document.getElementById("teamModal").style.display = "none";
 }
 
-function renderTeamList() {
-  const users = getUsers();
+async function renderTeamList() {
   const container = document.getElementById("teamListContainer");
-  container.innerHTML = Object.values(users).map(u => `
-    <div class="team-item">
-      <div>
-        <strong style="font-size:12px;display:block">${u.fullName}</strong>
-        <span style="font-size:10px;color:var(--muted)">User ID: <b>${u.userId}</b> · 2FA Question: <em>${u.question}</em></span>
+  container.textContent = "Loading team roster…";
+  try {
+    const data = await api("/api/team");
+    container.innerHTML = (data.team || []).map((u) => `
+      <div class="team-item">
+        <div>
+          <strong style="font-size:12px;display:block">${escapeHtml(u.fullName)}</strong>
+          <span style="font-size:10px;color:var(--muted)">User ID: <b>${escapeHtml(u.userId)}</b></span>
+        </div>
+        <div>
+          <span class="role-badge ${u.isCreator ? 'role-creator' : 'role-member'}">${u.isCreator ? '👑 Creator' : '✓ Active Member'}</span>
+        </div>
       </div>
-      <div>
-        <span class="role-badge ${u.isCreator ? 'role-creator' : 'role-member'}">${u.isCreator ? '👑 Creator' : '✓ Active Member'}</span>
-      </div>
-    </div>
-  `).join('');
+    `).join('');
+  } catch (err) {
+    container.textContent = err.message;
+  }
 }
 
-function verifyCreatorPin() {
+async function verifyCreatorPin() {
   const pin = document.getElementById("creatorPinInput").value.trim();
-  const err = document.getElementById("creatorPinError");
-  err.textContent = "";
+  const errEl = document.getElementById("creatorPinError");
+  errEl.textContent = "";
 
-  if (pin !== CREATOR_MASTER_PIN) {
-    err.textContent = "Incorrect Creator Master PIN! Only Hemavarshini can unlock access.";
-    return;
+  try {
+    const data = await api("/api/team/verify-creator", {
+      method: "POST",
+      body: { creatorPin: pin }
+    });
+    const codeEl = document.getElementById("inviteCodeValue");
+    if (codeEl) codeEl.textContent = data.inviteCode;
+    const copyBtn = document.getElementById("copyInviteBtn");
+    if (copyBtn) copyBtn.dataset.inviteCode = data.inviteCode;
+    document.getElementById("creatorGate").style.display = "none";
+    document.getElementById("inviteKeyBox").style.display = "block";
+    toast("Creator verified! Invite Key unlocked.");
+  } catch (err) {
+    errEl.textContent = err.message;
   }
+}
 
-  document.getElementById("creatorGate").style.display = "none";
-  document.getElementById("inviteKeyBox").style.display = "block";
-  toast("Creator verified! Invite Key unlocked.");
+function copyInviteCode() {
+  const btn = document.getElementById("copyInviteBtn");
+  const code = btn && btn.dataset.inviteCode;
+  if (!code) return;
+  navigator.clipboard.writeText(code);
+  toast("Invite code copied to clipboard!");
 }
 
 // ACCOUNT SETTINGS MODAL (UPDATE OWN CREDENTIALS)
@@ -1462,9 +1508,10 @@ function openAccountSettingsModal() {
     return;
   }
   document.getElementById("settingsMyId").value = currentSessionUser.userId;
-  document.getElementById("settingsNewPass").value = currentSessionUser.password || "";
-  document.getElementById("settingsQuestion").value = currentSessionUser.question || "who is your spirit animal";
-  document.getElementById("settingsAnswer").value = currentSessionUser.answer || "";
+  document.getElementById("settingsCurrentPass").value = "";
+  document.getElementById("settingsNewPass").value = "";
+  document.getElementById("settingsQuestion").value = "";
+  document.getElementById("settingsAnswer").value = "";
   document.getElementById("accountSettingsModal").style.display = "flex";
 }
 
@@ -1472,25 +1519,33 @@ function closeAccountSettingsModal() {
   document.getElementById("accountSettingsModal").style.display = "none";
 }
 
-function handleUpdateMySecurity(e) {
+async function handleUpdateMySecurity(e) {
   e.preventDefault();
+  const currentPass = document.getElementById("settingsCurrentPass").value;
   const newPass = document.getElementById("settingsNewPass").value.trim();
   const newQ = document.getElementById("settingsQuestion").value.trim();
-  const newAns = document.getElementById("settingsAnswer").value.trim().toLowerCase();
+  const newAns = document.getElementById("settingsAnswer").value.trim();
 
-  const users = getUsers();
-  users[currentSessionUser.userId].password = newPass;
-  users[currentSessionUser.userId].question = newQ;
-  users[currentSessionUser.userId].answer = newAns;
-  saveUsers(users);
+  const payload = { currentPassword: currentPass };
+  if (newPass) payload.newPassword = newPass;
+  if (newQ) payload.question = newQ;
+  if (newAns) payload.answer = newAns;
 
-  currentSessionUser.password = newPass;
-  currentSessionUser.question = newQ;
-  currentSessionUser.answer = newAns;
-  sessionStorage.setItem("jhj_active_session", JSON.stringify(currentSessionUser));
+  if (!newPass && !newQ && !newAns) {
+    toast("Enter a new password or updated challenge details.");
+    return;
+  }
 
-  closeAccountSettingsModal();
-  toast("Your password & 2FA security challenge updated! ✓");
+  try {
+    const data = await api("/api/user/security", { method: "PUT", body: payload });
+    if (data.token) sessionStorage.setItem(TOKEN_KEY, data.token);
+    currentSessionUser = data.user;
+    applyLoggedInUser(currentSessionUser);
+    closeAccountSettingsModal();
+    toast("Your password & 2FA security challenge updated!");
+  } catch (err) {
+    toast(err.message);
+  }
 }
 
 // =========================================================================
@@ -1966,11 +2021,15 @@ async function respondAI(q) {
   const thinkingId = 'thinking_' + Date.now();
   addAIMessage(`<span style="color:#64748b;font-style:italic">🤖 Agent reasoning: selecting tools & querying SOP RAG...</span>`, 'bot');
 
-  // Try live API first
+  // Try live API first (requires the authenticated session token)
   try {
-    const res = await fetch('http://localhost:8000/api/v1/copilot/chat', {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${FASTAPI_BASE}/api/v1/copilot/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
+      credentials: 'include',
       body: JSON.stringify({ question: q, context_order_id: selectedOrder ? selectedOrder.id : 'ORD_10001' })
     });
     if (res.ok) {

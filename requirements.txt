@@ -20,6 +20,10 @@ pydantic>=2.5.0
 python-multipart>=0.0.6
 requests>=2.31.0
 
+# Authentication (JWT verification + shared .env loading)
+pyjwt>=2.8.0
+python-dotenv>=1.0.0
+
 # Database & Async Cache (Optional for distributed deploy)
 psycopg2-binary>=2.9.9
 redis>=5.0.1

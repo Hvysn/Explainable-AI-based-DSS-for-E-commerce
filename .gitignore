@@ -36,6 +36,17 @@ dist/
 dist-ssr/
 *.local
 
+# Secrets & local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Authentication user store (contains password hashes)
+server/data/*.json
+!server/data/.gitkeep
+
 # OS / Editor
 .DS_Store
 Thumbs.db

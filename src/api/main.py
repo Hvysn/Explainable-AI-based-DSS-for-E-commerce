@@ -9,9 +9,11 @@ import sys
 import json
 from typing import Dict, Any, List
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
+
+from src.api.security import get_current_user, require_ingest_access
 
 # Add parent directory to path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,14 +30,36 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for React frontend
+# CORS: explicit allow-list only. A wildcard cannot be combined safely with
+# credentialed requests, so we read trusted origins from the environment.
+DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:5173,http://localhost:8000"
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", DEFAULT_ORIGINS).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+    max_age=600,
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Baseline hardening headers for every response."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 # Initialize explainer instance
 explainer = ReturnExplainer()
@@ -116,19 +140,24 @@ load_initial_seed_orders()
 
 @app.get("/")
 def health_check():
+    """Public liveness probe. Business metrics require authentication."""
     return {
         "status": "ONLINE",
         "service": "Reverse Logistics Pre-Dispatch DSS",
-        "active_queue_count": len(ACTIVE_QUEUE),
-        "cumulative_savings_inr": round(CUMULATIVE_METRICS["total_net_savings_inr"], 2)
+        "version": "1.0.0"
     }
 
 
 @app.post("/api/v1/orders/checkout")
-def checkout_ingestion(payload: CheckoutPayload, background_tasks: BackgroundTasks):
+def checkout_ingestion(
+    payload: CheckoutPayload,
+    background_tasks: BackgroundTasks,
+    _api_key: str = Depends(require_ingest_access),
+):
     """
     Sub-50ms non-blocking customer checkout ingress.
     Buffers payload and triggers async feature synthesis & XAI.
+    Requires the shared X-API-Key header (server-to-server ingress).
     """
     # Quick bracket shopping detection
     styles = [it.style_parent_id for it in payload.items]
@@ -199,7 +228,7 @@ def checkout_ingestion(payload: CheckoutPayload, background_tasks: BackgroundTas
 
 
 @app.get("/api/v1/warehouse/queue")
-def get_warehouse_queue():
+def get_warehouse_queue(_user: Dict[str, Any] = Depends(get_current_user)):
     """Returns active orders awaiting packing and dispatch, sorted by return risk."""
     return {
         "count": len(ACTIVE_QUEUE),
@@ -208,7 +237,10 @@ def get_warehouse_queue():
 
 
 @app.post("/api/v1/warehouse/action")
-def log_warehouse_action(req: WarehouseActionRequest):
+def log_warehouse_action(
+    req: WarehouseActionRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     Operator logs a physical or digital intervention.
     Calculates realized net savings and updates system telemetry.
@@ -228,7 +260,8 @@ def log_warehouse_action(req: WarehouseActionRequest):
     target["status"] = "ACTION_COMPLETED" if req.action_taken != "DISPATCH_AS_IS" else "DISPATCHED_DIRECT"
     target["action_logged"] = {
         "action": req.action_taken,
-        "operator_id": req.operator_id,
+        # Never trust a client-supplied operator identity.
+        "operator_id": user.get("sub"),
         "timestamp": datetime.now().strftime("%H:%M:%S"),
         "net_savings_realized_inr": savings_realized
     }
@@ -252,7 +285,7 @@ def log_warehouse_action(req: WarehouseActionRequest):
 
 
 @app.get("/api/v1/warehouse/metrics")
-def get_warehouse_metrics():
+def get_warehouse_metrics(_user: Dict[str, Any] = Depends(get_current_user)):
     """Returns real-time dashboard telemetry and financial impact."""
     total_processed = max(1, CUMULATIVE_METRICS["total_orders_processed"])
     intercept_rate = (CUMULATIVE_METRICS["high_risk_intercepted"] / total_processed) * 100
@@ -271,7 +304,10 @@ def get_warehouse_metrics():
 
 
 @app.post("/api/v1/copilot/chat")
-def copilot_chat(query: CopilotQuery):
+def copilot_chat(
+    query: CopilotQuery,
+    _user: Dict[str, Any] = Depends(get_current_user),
+):
     """
     Autonomous Forward Deployed AI Agent endpoint for warehouse operations.
     Executes ReAct reasoning loop with Tool Calling and Domain RAG over SOPs.

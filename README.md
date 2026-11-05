@@ -109,7 +109,27 @@ For enterprise fulfillment centers, the system embeds an **Autonomous Operations
 
 ---
 
-## 4. Quick Start & Execution Guide
+## 4. Security & Authentication
+
+Authentication is enforced server-side. The Express gateway issues short-lived
+JWTs, FastAPI verifies them, and both dashboards authenticate against the gateway
+(no plaintext passwords, PINs or invite codes live in the browser bundles).
+
+**Read [`docs/SECURITY.md`](./docs/SECURITY.md) before deploying.** In short:
+
+```bash
+cp .env.example .env
+openssl rand -hex 32   # paste into JWT_SECRET
+openssl rand -hex 32   # paste into INGEST_API_KEY
+# then set SEED_ADMIN_*, TEAM_INVITE_CODE and CREATOR_MASTER_PIN
+```
+
+The first Creator account is seeded from `SEED_ADMIN_*` only when the user store
+is empty — change its password immediately after the first login.
+
+---
+
+## 5. Quick Start & Execution Guide
 
 ### Option A: Direct Local Execution (No Docker needed)
 1. **Clone the repository:**
@@ -118,39 +138,58 @@ For enterprise fulfillment centers, the system embeds an **Autonomous Operations
    cd Explainable-AI-based-DSS-for-E-commerce
    ```
 
-2. **Install Python dependencies:**
+2. **Configure secrets:**
    ```bash
-   pip install -r requirements.txt
+   cp .env.example .env
+   # edit .env: JWT_SECRET, INGEST_API_KEY, SEED_ADMIN_*, TEAM_INVITE_CODE, CREATOR_MASTER_PIN
    ```
 
-3. **Generate Dataset & Train Models:**
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   cd server && npm install && cd ..
+   cd client && npm install && cd ..
+   ```
+
+4. **Generate Dataset & Train Models:**
    ```bash
    python data/generate_dataset.py
    python src/nlp/aspect_miner.py
    python src/ml/train_xgboost.py
    ```
 
-4. **Launch the FastAPI Server:**
+5. **Start the Authentication Gateway:**
+   ```bash
+   cd server && npm start        # http://localhost:5000
+   ```
+
+6. **Launch the FastAPI Server** (separate terminal):
    ```bash
    uvicorn src.api.main:app --reload --port 8000
    ```
 
-5. **Open the Warehouse Supervisor Dashboard:**
-   Simply double-click `frontend/index.html` in your web browser!
+7. **Launch the Warehouse Supervisor Dashboard** (separate terminal):
+   ```bash
+   cd client && npm run dev      # http://localhost:3000 (proxies /api to :5000)
+   ```
+   The legacy `frontend/index.html` also works when served over HTTP and talks
+   to the auth gateway at `http://localhost:5000`.
 
 ---
 
 ### Option B: 1-Click Docker Compose
-To launch all services (FastAPI API + Redis Buffer + Nginx Dashboard UI) in isolated containers:
+Create `.env` first (see above), then launch all services (Auth Gateway + FastAPI
+API + Redis Buffer + Nginx Dashboard UI) in isolated containers:
 ```bash
 docker compose up --build
 ```
 * **API Documentation:** `http://localhost:8000/docs`
 * **Warehouse Dashboard:** `http://localhost:3000`
+* **Auth Gateway:** `http://localhost:5000/api/health`
 
 ---
 
-## 5. Live Demo Script for Evaluators
+## 6. Live Demo Script for Evaluators
 1. **Explain the Shift KPIs:** Point to the *Net Realized Savings* banner (showing positive ROI on intercepted orders).
 2. **Inspect a High-Risk Parcel (e.g., `ORD_10001`):**
    * Show the **TreeSHAP waterfall/bar breakdown** demonstrating that *Bracket Shopping (+45%)* and *SKU Sizing Inconsistency (+26%)* are the primary drivers.

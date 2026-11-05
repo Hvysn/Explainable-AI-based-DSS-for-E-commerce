@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+__pycache__
+*.pyc
+.venv
+venv
+docs
+*.log
